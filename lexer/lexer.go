@@ -11,8 +11,9 @@ var _def *stateful.Definition
 
 func init() {
 	ExpStart := stateful.Rule{`ExpStart`, `\$\(`, stateful.Push("Exp")}
-	Char := stateful.Rule{`Char`, `.`, nil}
-	AssignOp := stateful.Rule{`AssignOp`, `::=|:=|\?=|!=|=`, stateful.Push("Expr")}
+	ExpVar := stateful.Rule{`ExpVar`, `\$[\d]+|\$[\w-]+`, nil}
+	Char := stateful.Rule{`Char`, `.|\n`, nil}
+	AssignOp := stateful.Rule{`AssignOp`, `::=|:=|\?=|!=|\+=|=`, stateful.Push("Expr")}
 	KeywordPattern := strings.Join([]string{
 		"endif",
 		"ifeq",
@@ -36,10 +37,10 @@ func init() {
 		},
 		"Exp": {
 			stateful.Include("Base"),
-			ExpStart,
-			{"nl", `\n+`, nil},
 			{`ExpEnd`, `\)`, stateful.Pop()},
 			{`ExpStr`, `'[^']*'|"[^"]*"`, nil},
+			ExpVar,
+			ExpStart,
 			Char,
 		},
 		"TargetDeps": {
@@ -50,6 +51,14 @@ func init() {
 		"Expr": {
 			stateful.Include("Base"),
 			{`Nl`, `\n`, stateful.Pop()},
+			ExpVar,
+			ExpStart,
+			Char,
+		},
+		"Define": {
+			stateful.Include("Base"),
+			{`Endef`, `endef`, stateful.Pop()},
+			ExpVar,
 			ExpStart,
 			Char,
 		},
@@ -58,21 +67,18 @@ func init() {
 			{`Nl`, `\n`, stateful.Push("Root")},
 			stateful.Include("Expr"),
 		},
-		"RootBody": {
-			stateful.Include("Base"),
-			{`Nl`, `\n`, nil},
-			{`Tab`, `\t`, stateful.Push("Expr")},
-			ExpStart,
-			{`Define`, "define", stateful.Push("RootBody")},
-			{`Keyword`, KeywordPattern, stateful.Push("Keyword")},
-			AssignOp,
-			{`Char`, `.`, nil},
-		},
 		"Root": {
 			stateful.Include("Common"),
 			AssignOp,
 			{`Colon`, `:`, stateful.Push("TargetDeps")},
-			stateful.Include("RootBody"),
+			{`Nl`, `\n`, nil},
+			{`Tab`, `\t`, stateful.Push("Expr")},
+			ExpVar,
+			ExpStart,
+			{`Define`, "define", stateful.Push("Define")},
+			{`Keyword`, KeywordPattern, stateful.Push("Keyword")},
+			AssignOp,
+			Char,
 		},
 	})
 }

@@ -17,7 +17,8 @@ func (b Base) Comments() []string {
 
 type File struct {
 	Base
-	Nodes []Node
+	Path  string
+	Nodes Nodes
 }
 
 type Target struct {
@@ -56,17 +57,17 @@ type Include struct {
 
 type IfEq struct {
 	Base
-	Not   bool
-	Left  Node
-	Right Node
-	Body  []Node
+	Expected bool
+	Left     Node
+	Right    Node
+	Body     []Node
 }
 
 type IfDef struct {
 	Base
-	Not   bool
-	Ident string
-	Body  []Node
+	Expected bool
+	Ident    string
+	Body     []Node
 }
 
 type Comment struct {
@@ -77,5 +78,21 @@ type Comment struct {
 type Define struct {
 	Base
 	Name string
-	Body []Node
+	Body Node
+}
+
+type Modifier struct {
+	Base
+	Modifier string
+	Node     Node
+}
+
+type Nodes []Node
+
+func (b Nodes) SetComments(comments []string) {
+	b[0].SetComments(comments)
+}
+
+func (b Nodes) Comments() []string {
+	return nil
 }
