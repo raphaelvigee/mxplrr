@@ -29,7 +29,7 @@ func init() {
 		"Base": {
 			{"line_continuation", `\\\n\s*`, nil},
 			{`Comment`, `#[^\n]*\n`, nil},
-			{`Escaped`, `\\.`, nil},
+			{`Escaped`, `\\.|[$]{2}`, nil},
 		},
 		"Common": {
 			stateful.Include("Base"),

@@ -127,6 +127,7 @@ func TestRunner_Firstword(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		out := runAsFile(t, tc.expr)
+		assert.NotEmpty(t, out)
 		expected := makeRun(t, "", tc.expr)
 		assert.Equal(t, expected, out)
 	}
@@ -140,6 +141,7 @@ func TestRunner_Lastword(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		out := runAsFile(t, tc.expr)
+		assert.NotEmpty(t, out)
 		expected := makeRun(t, "", tc.expr)
 		assert.Equal(t, expected, out)
 	}
@@ -153,6 +155,7 @@ func TestRunner_Dir(t *testing.T) {
 		{"test/file.txt"},
 		{"/some/test/file.txt"},
 		{"/some/test/"},
+		{"/some/test"},
 		{"/"},
 	}
 	for _, tc := range testCases {
@@ -190,6 +193,7 @@ func TestRunner_Filter(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		out := runAsFile(t, tc.expr)
+		assert.NotEmpty(t, out)
 		expected := makeRun(t, "", tc.expr)
 		assert.Equal(t, expected, out)
 	}
@@ -203,6 +207,7 @@ func TestRunner_Strip(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		out := runAsFile(t, tc.expr)
+		assert.NotEmpty(t, out)
 		expected := makeRun(t, "", tc.expr)
 		assert.Equal(t, expected, out)
 	}
@@ -223,6 +228,7 @@ func TestRunner_Wildcard(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		out := runAsFile(t, tc.expr)
+		assert.NotEmpty(t, out)
 		expected := makeRun(t, "", tc.expr)
 		assert.Equal(t, expected, out)
 	}
@@ -236,6 +242,7 @@ func TestRunner_Foreach(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		out := runAsFile(t, tc.expr)
+		assert.NotEmpty(t, out)
 		expected := makeRun(t, "", tc.expr)
 		assert.Equal(t, expected, out)
 	}
@@ -249,6 +256,7 @@ func TestRunner_Subst(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		out := runAsFile(t, tc.expr)
+		assert.NotEmpty(t, out)
 		expected := makeRun(t, "", tc.expr)
 		assert.Equal(t, expected, out)
 	}
@@ -263,7 +271,7 @@ func TestRunner_Patsubst(t *testing.T) {
 		{"$(foo:.o=%.c)"},
 		{"$(foo:%.o=%.c)"},
 	}
-	pre := `foo = a.o b.o l.a c.o`
+	pre := `foo := a.o b.o l.a c.o`
 	for _, tc := range testCases {
 		out := runAsFile(t, pre, tc.expr)
 		assert.NotEmpty(t, out)
