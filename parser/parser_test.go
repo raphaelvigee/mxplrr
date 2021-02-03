@@ -407,3 +407,20 @@ $1
 		},
 	}, n)
 }
+
+func TestParsePatSubst(t *testing.T) {
+	n := parse(t, `
+$(foo:%.o=.c)
+`)
+	assert.Equal(t, &PatSubst{
+		Name: &Raw{
+			Text: "foo",
+		},
+		Pattern: &Raw{
+			Text: "%.o",
+		},
+		Subst: &Raw{
+			Text: ".c",
+		},
+	}, n)
+}

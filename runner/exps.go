@@ -34,6 +34,7 @@ func init() {
 		"error":      control,
 		"warning":    control,
 		"info":       control,
+		"patsubst":   patsubst,
 	}
 }
 
@@ -233,8 +234,7 @@ func filter(r *Runner, root string, args []parser.Node) (string, error) {
 	for _, w := range Words(text) {
 		match := false
 		for _, pattern := range Words(patterns) {
-			pattern := `^` + strings.Replace(regexp.QuoteMeta(pattern), "%", `(.*)`, 1) + `$`
-			r, err := regexp.Compile(pattern)
+			r, err := toRegex(pattern)
 			if err != nil {
 				return "", err
 			}
@@ -251,6 +251,12 @@ func filter(r *Runner, root string, args []parser.Node) (string, error) {
 	}
 
 	return strings.Join(out, " "), nil
+}
+
+func toRegex(pattern string) (*regexp.Regexp, error) {
+	pattern = `^` + strings.Replace(regexp.QuoteMeta(pattern), "%", `(.*)`, 1) + `$`
+
+	return regexp.Compile(pattern)
 }
 
 func wildcard(r *Runner, root string, args []parser.Node) (string, error) {
@@ -296,4 +302,48 @@ func foreach(r *Runner, root string, args []parser.Node) (string, error) {
 	}
 
 	return strings.Join(out, " "), nil
+}
+
+func patsubst(r *Runner, root string, args []parser.Node) (string, error) {
+	pattern, err := r.Run(args[0])
+	if err != nil {
+		return "", err
+	}
+
+	repl, err := r.Run(args[1])
+	if err != nil {
+		return "", err
+	}
+
+	text, err := r.Run(args[2])
+	if err != nil {
+		return "", err
+	}
+
+	if !strings.Contains(pattern, "%") {
+		pattern = "%" + pattern
+		repl = "%" + repl
+	}
+
+	reg, err := toRegex(pattern)
+	if err != nil {
+		return "", err
+	}
+
+	words := Words(text)
+	for i, w := range words {
+		if reg.MatchString(w) {
+			words[i] = reg.ReplaceAllStringFunc(w, func(s string) string {
+
+				if !strings.Contains(repl, "%") {
+					return repl
+				}
+
+				groups := reg.FindStringSubmatch(w)
+				return strings.Replace(repl, "%", groups[1], 1)
+			})
+		}
+	}
+
+	return strings.Join(words, " "), nil
 }

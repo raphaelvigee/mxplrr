@@ -50,6 +50,13 @@ type Var struct {
 	Value Node
 }
 
+type PatSubst struct {
+	Base
+	Name    Node
+	Pattern Node
+	Subst   Node
+}
+
 type Include struct {
 	Base
 	Path Node

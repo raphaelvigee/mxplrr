@@ -10,17 +10,18 @@ import (
 	"testing"
 )
 
-func makeRun(t *testing.T, s string) string {
+func makeRun(t *testing.T, pre, s string) string {
 	f, err := ioutil.TempFile("", "make-run")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer os.Remove(f.Name())
 
-	f.WriteString(`
+	f.WriteString(pre + `
+
 run:
 	@echo ` + s + `
-`[1:])
+`)
 
 	cmd := exec.Command("make", "-f", f.Name(), "run")
 
@@ -32,15 +33,18 @@ run:
 	return strings.TrimSuffix(string(out), "\n")
 }
 
-func run(t *testing.T, r *Runner, s string) string {
-	n, err := parser.Parse(strings.NewReader(s))
-	if err != nil {
-		t.Fatal(err)
-	}
+func run(t *testing.T, r *Runner, ss ...string) string {
+	var out string
+	for _, s := range ss {
+		n, err := parser.Parse(strings.NewReader(s))
+		if err != nil {
+			t.Fatal(err)
+		}
 
-	out, err := r.Run(n)
-	if err != nil {
-		t.Fatal(err)
+		out, err = r.Run(n)
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	return out
@@ -105,13 +109,14 @@ func TestRunner_RunExpr(t *testing.T) {
 
 const rootDir = "/some/dir"
 
-func runAsFile(t *testing.T, s string) string {
+func runAsFile(t *testing.T, s ...string) string {
 	r := &Runner{
 		RootDir: rootDir,
+		Env:     map[string]parser.Node{},
 		files:   []string{rootDir + "/subdir/Makefile"},
 	}
 
-	return run(t, r, s)
+	return run(t, r, s...)
 }
 
 func TestRunner_Firstword(t *testing.T) {
@@ -122,7 +127,7 @@ func TestRunner_Firstword(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		out := runAsFile(t, tc.expr)
-		expected := makeRun(t, tc.expr)
+		expected := makeRun(t, "", tc.expr)
 		assert.Equal(t, expected, out)
 	}
 }
@@ -135,7 +140,7 @@ func TestRunner_Lastword(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		out := runAsFile(t, tc.expr)
-		expected := makeRun(t, tc.expr)
+		expected := makeRun(t, "", tc.expr)
 		assert.Equal(t, expected, out)
 	}
 }
@@ -152,11 +157,11 @@ func TestRunner_Dir(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		out := runAsFile(t, "$(dir "+tc.path+")")
-		expected := makeRun(t, "$(dir "+tc.path+")")
+		expected := makeRun(t, "", "$(dir "+tc.path+")")
 		assert.Equal(t, expected, out, "dir "+tc.path)
 
 		out = runAsFile(t, "$(notdir "+tc.path+")")
-		expected = makeRun(t, "$(notdir "+tc.path+")")
+		expected = makeRun(t, "", "$(notdir "+tc.path+")")
 		assert.Equal(t, expected, out, "notdir "+tc.path)
 	}
 }
@@ -185,7 +190,7 @@ func TestRunner_Filter(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		out := runAsFile(t, tc.expr)
-		expected := makeRun(t, tc.expr)
+		expected := makeRun(t, "", tc.expr)
 		assert.Equal(t, expected, out)
 	}
 }
@@ -198,7 +203,7 @@ func TestRunner_Strip(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		out := runAsFile(t, tc.expr)
-		expected := makeRun(t, tc.expr)
+		expected := makeRun(t, "", tc.expr)
 		assert.Equal(t, expected, out)
 	}
 }
@@ -218,7 +223,7 @@ func TestRunner_Wildcard(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		out := runAsFile(t, tc.expr)
-		expected := makeRun(t, tc.expr)
+		expected := makeRun(t, "", tc.expr)
 		assert.Equal(t, expected, out)
 	}
 }
@@ -231,7 +236,7 @@ func TestRunner_Foreach(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		out := runAsFile(t, tc.expr)
-		expected := makeRun(t, tc.expr)
+		expected := makeRun(t, "", tc.expr)
 		assert.Equal(t, expected, out)
 	}
 }
@@ -244,7 +249,25 @@ func TestRunner_Subst(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		out := runAsFile(t, tc.expr)
-		expected := makeRun(t, tc.expr)
+		expected := makeRun(t, "", tc.expr)
+		assert.Equal(t, expected, out)
+	}
+}
+
+func TestRunner_Patsubst(t *testing.T) {
+	testCases := []struct {
+		expr string
+	}{
+		{"$(patsubst %.c,%.o,$(foo))"},
+		{"$(foo:.o=.c)"},
+		{"$(foo:.o=%.c)"},
+		{"$(foo:%.o=%.c)"},
+	}
+	pre := `foo = a.o b.o l.a c.o`
+	for _, tc := range testCases {
+		out := runAsFile(t, pre, tc.expr)
+		assert.NotEmpty(t, out)
+		expected := makeRun(t, pre, tc.expr)
 		assert.Equal(t, expected, out)
 	}
 }

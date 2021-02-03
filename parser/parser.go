@@ -265,10 +265,31 @@ func (p *Parser) exp() (_ Node, rerr error) {
 				p.advance() // Eat ,
 			}
 
+			// Patsubst
+			if len(exp.Parts) == 1 && lexer.NewMatcher("Char", ":").Is(t) {
+				p.advance() // :
+
+				pattern, err := p.expr(true, lexer.NewMatcher("Char", "="))
+				if err != nil {
+					return nil, err
+				}
+
+				subst, err := p.expr(true, lexer.NewMatcher("ExpEnd", ")"))
+				if err != nil {
+					return nil, err
+				}
+
+				return &PatSubst{
+					Name:    exp.Parts[0],
+					Pattern: pattern,
+					Subst:   subst,
+				}, nil
+			}
+
 			isFirst := len(exp.Parts) == 0
 			sepMatcher := func() lexer.Matcher {
 				if isFirst {
-					return lexer.NewMultiMatcher(lexer.NewMatcher("Char", " ", "\n"), lexer.NewMatcher("Nl"))
+					return lexer.NewMultiMatcher(lexer.NewMatcher("Char", " ", "\n", ":"), lexer.NewMatcher("Nl"))
 				}
 
 				return lexer.NewMatcher("Char", ",")
@@ -276,7 +297,7 @@ func (p *Parser) exp() (_ Node, rerr error) {
 
 			part, err := p._expr(exprOptions{
 				matcher:    sepMatcher,
-				eat:        isFirst,
+				eat:        false,
 				rawMatcher: sepMatcher,
 				rawDrop: func(t lexer.Token) bool {
 					return lexer.NewMatcher("Nl").Is(t)
@@ -285,6 +306,8 @@ func (p *Parser) exp() (_ Node, rerr error) {
 			if err != nil {
 				return exp, err
 			}
+
+			p.eat(lexer.NewMultiMatcher(lexer.NewMatcher("Char", " ", "\n"), lexer.NewMatcher("Nl")))
 
 			if part == nil {
 				if isFirst {

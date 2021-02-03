@@ -217,6 +217,14 @@ func (r *Runner) Run(node parser.Node) (_ret string, _err error) {
 		r.Env[n.Name] = n.Body
 
 		return "", nil
+	case *parser.PatSubst:
+		return Exps["patsubst"](r, "patsubst", []parser.Node{
+			n.Pattern,
+			n.Subst,
+			&parser.Exp{
+				Parts: []parser.Node{n.Name},
+			},
+		})
 	}
 
 	return "", fmt.Errorf("unhandled type %T", node)
