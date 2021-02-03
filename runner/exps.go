@@ -7,10 +7,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
-type ExpFunc func(*Runner, string, []parser.Node) (string, error)
+type ExpFunc func(r *Runner, root string, args []parser.Node) (string, error)
 
 var Exps map[string]ExpFunc
 
@@ -19,6 +20,7 @@ func init() {
 		"shell":      shell,
 		"call":       call,
 		"if":         _if,
+		"words":      words,
 		"firstword":  firstword,
 		"lastword":   lastword,
 		"strip":      strip,
@@ -26,6 +28,7 @@ func init() {
 		"eval":       eval,
 		"dir":        dir,
 		"notdir":     notdir,
+		"basename":   basename,
 		"realpath":   realpath,
 		"wildcard":   wildcard,
 		"foreach":    foreach,
@@ -36,6 +39,31 @@ func init() {
 		"info":       control,
 		"patsubst":   patsubst,
 	}
+}
+
+func basename(r *Runner, root string, args []parser.Node) (string, error) {
+	text, err := r.Run(args[0])
+	if err != nil {
+		return "", err
+	}
+
+	words := Words(text)
+	for i, w := range words {
+		words[i] = filepath.Base(w)
+	}
+
+	return strings.Join(words, " "), nil
+}
+
+func words(r *Runner, root string, args []parser.Node) (string, error) {
+	text, err := r.Run(args[0])
+	if err != nil {
+		return "", err
+	}
+
+	c := len(Words(text))
+
+	return strconv.Itoa(c), nil
 }
 
 func shell(r *Runner, root string, args []parser.Node) (string, error) {

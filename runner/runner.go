@@ -156,6 +156,10 @@ func (r *Runner) Run(node parser.Node) (_ret string, _err error) {
 			return "", err
 		}
 
+		if name == "" {
+			return "", nil
+		}
+
 		log.Tracef("Defining target %v", name)
 
 		if _, ok := r.Targets[name]; ok {
@@ -225,6 +229,9 @@ func (r *Runner) Run(node parser.Node) (_ret string, _err error) {
 				Parts: []parser.Node{n.Name},
 			},
 		})
+	case *parser.StaticPatternTarget:
+		// TODO: implement StaticPatternTarget
+		return "", nil
 	}
 
 	return "", fmt.Errorf("unhandled type %T", node)

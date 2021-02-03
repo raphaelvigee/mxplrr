@@ -23,9 +23,17 @@ type File struct {
 
 type Target struct {
 	Base
-	Name     Node
-	Deps     []Node
-	Commands []Node
+	Name   Node
+	Deps   Node
+	Recipe []Node
+}
+
+type StaticPatternTarget struct {
+	Base
+	Names   Node
+	Targets Node
+	Prereqs Node
+	Recipe  []Node
 }
 
 type Raw struct {

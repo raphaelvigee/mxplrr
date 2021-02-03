@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"github.com/alecthomas/repr"
 	"github.com/stretchr/testify/assert"
 	"strings"
 	"testing"
@@ -22,23 +23,24 @@ T.%/: $(A) test \
 	@echo
 `)
 	assert.Equal(t, &Target{
-		Name: &Raw{Text: "T.%/"},
-		Deps: []Node{
-			&Exp{
-				Parts: []Node{
-					&Raw{
-						Text: "A",
+		Name: &Raw{
+			Text: "T.%/",
+		},
+		Deps: &Expr{
+			Parts: []Node{
+				&Exp{
+					Parts: []Node{
+						&Raw{
+							Text: "A",
+						},
 					},
 				},
-			},
-			&Raw{
-				Text: "test",
-			},
-			&Raw{
-				Text: "bbbb",
+				&Raw{
+					Text: " test bbbb",
+				},
 			},
 		},
-		Commands: []Node{
+		Recipe: []Node{
 			&Raw{
 				Text: "@echo",
 			},
@@ -237,7 +239,7 @@ hello:
 			Name: &Raw{
 				Text: "hello",
 			},
-			Commands: []Node{
+			Recipe: []Node{
 				&Raw{
 					Text: "world",
 				},
@@ -248,13 +250,14 @@ hello:
 
 func TestParseEOFTargetDeps(t *testing.T) {
 	n := parse(t, `target: dep`)
+	repr.Println(n)
+
 	assert.Equal(t, &Target{
 		Name: &Raw{Text: "target"},
-		Deps: []Node{
-			&Raw{
-				Text: "dep",
-			},
+		Deps: &Raw{
+			Text: "dep",
 		},
+		Recipe: []Node{},
 	}, n)
 }
 
@@ -278,7 +281,7 @@ $(ARG)-test:
 				},
 			},
 		},
-		Commands: []Node{
+		Recipe: []Node{
 			&Raw{
 				Text: "echo",
 			},

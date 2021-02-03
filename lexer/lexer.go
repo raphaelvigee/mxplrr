@@ -33,7 +33,6 @@ func init() {
 		},
 		"Common": {
 			stateful.Include("Base"),
-			{"ws", `[ ]+`, nil},
 		},
 		"Exp": {
 			stateful.Include("Base"),
@@ -42,11 +41,6 @@ func init() {
 			ExpVar,
 			ExpStart,
 			Char,
-		},
-		"TargetDeps": {
-			stateful.Include("Base"),
-			{`TargetDepsEnd`, `\n`, stateful.Push("Root")},
-			stateful.Include("Expr"),
 		},
 		"Expr": {
 			stateful.Include("Base"),
@@ -70,14 +64,13 @@ func init() {
 		"Root": {
 			stateful.Include("Common"),
 			AssignOp,
-			{`Colon`, `:`, stateful.Push("TargetDeps")},
+			{`Colon`, `:`, nil},
 			{`Nl`, `\n`, nil},
 			{`Tab`, `\t`, stateful.Push("Expr")},
 			ExpVar,
 			ExpStart,
 			{`Define`, "define", stateful.Push("Define")},
 			{`Keyword`, KeywordPattern, stateful.Push("Keyword")},
-			AssignOp,
 			Char,
 		},
 	})
