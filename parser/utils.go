@@ -2,7 +2,7 @@ package parser
 
 import (
 	"fmt"
-	"makexplorer/lexer"
+	"mxplrr/lexer"
 )
 
 func (p *Parser) advance() lexer.Token {

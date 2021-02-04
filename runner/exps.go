@@ -3,7 +3,7 @@ package runner
 import (
 	"errors"
 	"fmt"
-	"makexplorer/parser"
+	"mxplrr/parser"
 	"os/exec"
 	"path/filepath"
 	"regexp"

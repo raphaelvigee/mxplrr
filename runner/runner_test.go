@@ -3,7 +3,7 @@ package runner
 import (
 	"github.com/stretchr/testify/assert"
 	"io/ioutil"
-	"makexplorer/parser"
+	"mxplrr/parser"
 	"os"
 	"os/exec"
 	"strings"

@@ -1,6 +1,8 @@
-module makexplorer
+module github.com/raphaelvigee/mxplrr
 
 go 1.15
+
+replace mxplrr => ./
 
 require (
 	github.com/alecthomas/participle/v2 v2.0.0-alpha3
@@ -9,4 +11,5 @@ require (
 	github.com/sirupsen/logrus v1.2.0
 	github.com/spf13/cobra v1.1.1
 	github.com/stretchr/testify v1.4.0
+	mxplrr v0.0.0-00010101000000-000000000000
 )

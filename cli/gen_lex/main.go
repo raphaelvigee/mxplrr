@@ -2,7 +2,7 @@ package main
 
 import (
 	"github.com/alecthomas/participle/v2/experimental/codegen"
-	"makexplorer/lexer"
+	"mxplrr/lexer"
 	"os"
 )
 

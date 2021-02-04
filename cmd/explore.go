@@ -4,8 +4,8 @@ import (
 	"github.com/alecthomas/repr"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
-	"makexplorer/parser"
-	"makexplorer/runner"
+	"mxplrr/parser"
+	"mxplrr/runner"
 	"path/filepath"
 )
 

@@ -3,7 +3,7 @@ package parser
 import (
 	"errors"
 	"io"
-	"makexplorer/lexer"
+	"mxplrr/lexer"
 	"os"
 	"strings"
 )

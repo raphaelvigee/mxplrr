@@ -3,7 +3,7 @@ package runner
 import (
 	"fmt"
 	log "github.com/sirupsen/logrus"
-	"makexplorer/parser"
+	"mxplrr/parser"
 	"os"
 	"path/filepath"
 	"strconv"
