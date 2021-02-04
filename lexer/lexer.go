@@ -10,9 +10,10 @@ import (
 var _def *stateful.Definition
 
 func init() {
-	ExpStart := stateful.Rule{`ExpStart`, `\$\(`, stateful.Push("Exp")}
-	Char := stateful.Rule{`Char`, `.`, nil}
-	AssignOp := stateful.Rule{`AssignOp`, `::=|:=|\?=|!=|=`, stateful.Push("Expr")}
+	ExpStart := stateful.Rule{`ExpStart`, `\$[({]`, stateful.Push("Exp")}
+	ExpVar := stateful.Rule{`ExpVar`, `\$[\d]+|\$[\w]`, nil}
+	Char := stateful.Rule{`Char`, `.|\n`, nil}
+	AssignOp := stateful.Rule{`AssignOp`, `::=|:=|\?=|!=|\+=|=`, nil}
 	KeywordPattern := strings.Join([]string{
 		"endif",
 		"ifeq",
@@ -27,52 +28,35 @@ func init() {
 	_def = stateful.Must(stateful.Rules{
 		"Base": {
 			{"line_continuation", `\\\n\s*`, nil},
-			{`Comment`, `#[^\n]*\n`, nil},
-			{`Escaped`, `\\.`, nil},
+			{`Comment`, `#[^\n]*`, nil},
+			{`Escaped`, `\\.|[$]{2}`, nil},
 		},
 		"Common": {
 			stateful.Include("Base"),
-			{"ws", `[ ]+`, nil},
 		},
 		"Exp": {
 			stateful.Include("Base"),
-			ExpStart,
-			{"nl", `\n+`, nil},
-			{`ExpEnd`, `\)`, stateful.Pop()},
+			{`ExpEnd`, `[)}]`, stateful.Pop()},
 			{`ExpStr`, `'[^']*'|"[^"]*"`, nil},
-			Char,
-		},
-		"TargetDeps": {
-			stateful.Include("Base"),
-			{`TargetDepsEnd`, `\n`, stateful.Push("Root")},
-			stateful.Include("Expr"),
-		},
-		"Expr": {
-			stateful.Include("Base"),
-			{`Nl`, `\n`, stateful.Pop()},
+			ExpVar,
 			ExpStart,
 			Char,
 		},
 		"Keyword": {
 			stateful.Include("Common"),
 			{`Nl`, `\n`, stateful.Push("Root")},
-			stateful.Include("Expr"),
-		},
-		"RootBody": {
-			stateful.Include("Base"),
-			{`Nl`, `\n`, nil},
-			{`Tab`, `\t`, stateful.Push("Expr")},
-			ExpStart,
-			{`Define`, "define", stateful.Push("RootBody")},
-			{`Keyword`, KeywordPattern, stateful.Push("Keyword")},
-			AssignOp,
-			{`Char`, `.`, nil},
+			stateful.Include("Root"),
 		},
 		"Root": {
 			stateful.Include("Common"),
 			AssignOp,
-			{`Colon`, `:`, stateful.Push("TargetDeps")},
-			stateful.Include("RootBody"),
+			{`Colon`, `:`, nil},
+			{`Nl`, `\n`, nil},
+			{`Tab`, `\t`, nil},
+			ExpVar,
+			ExpStart,
+			{`Keyword`, KeywordPattern, stateful.Push("Keyword")},
+			Char,
 		},
 	})
 }

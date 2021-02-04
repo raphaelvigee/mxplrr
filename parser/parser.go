@@ -4,29 +4,60 @@ import (
 	"errors"
 	"io"
 	"makexplorer/lexer"
+	"os"
 	"strings"
 )
+
+var NlMatcher = lexer.NewMultiMatcher(lexer.NewMatcher("Char", "\n"), lexer.NewMatcher("Nl"))
 
 func isEOF(t lexer.Token) bool {
 	return lexer.NewMatcher("EOF").Is(t)
 }
 
-func Parse(r io.Reader) (Node, error) {
+func NewParser(r io.Reader) (*Parser, error) {
 	toks, err := lexer.Tokenize(r)
 	if err != nil {
 		return nil, err
 	}
 
-	return ParseTokens(toks)
+	return NewParserTokens(toks), nil
 }
 
-func ParseTokens(tokens []lexer.Token) (Node, error) {
-	return (&Parser{
+func NewParserString(s string) (*Parser, error) {
+	return NewParser(strings.NewReader(s))
+}
+
+func ParseFile(filename string) (*File, error) {
+	f, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	p, err := NewParser(f)
+	if err != nil {
+		return nil, err
+	}
+
+	n, err := p.Parse()
+	if err != nil {
+		return nil, err
+	}
+
+	return &File{
+		Path:  filename,
+		Nodes: n,
+	}, nil
+}
+
+func NewParserTokens(tokens []lexer.Token) *Parser {
+	return &Parser{
 		tokens: tokens,
-	}).parse()
+	}
 }
 
 type Parser struct {
+	ParseVarBody bool
 	tokens       []lexer.Token
 	c            int
 	lastComments []string
@@ -46,8 +77,17 @@ func (p *Parser) root(t lexer.Token) (outNode Node, rerr error) {
 	}
 
 	if lexer.NewMatcher("Char", "-", "+").Is(t) {
-		p.advance()               // Eat modifier
-		return p.root(p.peekn(0)) // TODO: Ignore modifier for now
+		m := p.advance() // Eat modifier
+
+		n, err := p.root(p.peekn(0))
+		if err != nil {
+			return nil, err
+		}
+
+		return &Modifier{
+			Modifier: m.Value,
+			Node:     n,
+		}, nil
 	}
 
 	defer func() {
@@ -65,7 +105,7 @@ func (p *Parser) root(t lexer.Token) (outNode Node, rerr error) {
 		p.lastComments = nil
 		p.advance() // Eat \n
 		return p.root(p.peekn(0))
-	case lexer.Symbol("Keyword"), lexer.Symbol("Define"):
+	case lexer.Symbol("Keyword"):
 		p.advance()
 		switch t.Value {
 		case "include":
@@ -83,18 +123,27 @@ func (p *Parser) root(t lexer.Token) (outNode Node, rerr error) {
 		panic("keyword `" + t.Value + "` needs implementing")
 	}
 
-	exp, err := p.expr(false, lexer.NewMultiMatcher(lexer.NewMatcher("Nl"), lexer.NewMatcher("Colon"), lexer.NewMatcher("AssignOp")))
+	exp, err := p.expr(false, lexer.NewMultiMatcher(
+		NlMatcher,
+		lexer.NewMatcher("Colon"),
+		lexer.NewMatcher("AssignOp"),
+	))
 	if err != nil {
 		return nil, err
 	}
+
+	opt := p.peekn(0)
+	switch opt.Type {
+	case lexer.Symbol("Colon"):
+		p.advance() // Eat :
+		return p.target(exp)
+	}
+
 	if exp != nil {
-		opt := p.peekn(0)
 		switch opt.Type {
 		case lexer.Symbol("Nl"):
-			p.advance()
-		case lexer.Symbol("Colon"):
-			p.advance() // Eat :
-			return p.target(exp)
+			p.advance() // Eat \n
+
 		case lexer.Symbol("AssignOp"):
 			p.advance() // Eat op
 			return p.varass(exp, opt)
@@ -106,8 +155,16 @@ func (p *Parser) root(t lexer.Token) (outNode Node, rerr error) {
 	return nil, p.ut(t)
 }
 
+func (p *Parser) Parse() (Node, error) {
+	return p.parse()
+}
+
+func (p *Parser) ParseExpr() (Node, error) {
+	return p.expr(false, lexer.NewMatcher("EOF"))
+}
+
 func (p *Parser) parse() (Node, error) {
-	file := &File{}
+	nodes := make(Nodes, 0)
 
 	for {
 		t := p.peekn(0)
@@ -117,15 +174,21 @@ func (p *Parser) parse() (Node, error) {
 				break
 			}
 
-			return file, err
+			return nodes, err
 		}
-		file.Nodes = append(file.Nodes, n)
+		nodes = append(nodes, n)
 	}
 
-	return file, nil
+	if len(nodes) == 1 {
+		return nodes[0], nil
+	}
+
+	return nodes, nil
 }
 
 func (p *Parser) include() (*Include, error) {
+	p.eatall(lexer.NewMatcher("Char", " "))
+
 	expr, err := p.expr(true, lexer.NewMatcher("Nl"))
 	if err != nil {
 		return nil, err
@@ -135,8 +198,6 @@ func (p *Parser) include() (*Include, error) {
 		Path: expr,
 	}, nil
 }
-
-type UntilFunc func(token lexer.Token) (bool, bool)
 
 func (p *Parser) expr(eat bool, matcher lexer.Matcher) (_ Node, rerr error) {
 	return p._expr(exprOptions{
@@ -151,6 +212,7 @@ type exprOptions struct {
 	eat     bool
 
 	rawMatcher lexer.Matcher
+	rawDrop    DropFunc
 }
 
 func (p *Parser) _expr(o exprOptions) (_ Node, rerr error) {
@@ -182,8 +244,12 @@ func (p *Parser) _expr(o exprOptions) (_ Node, rerr error) {
 		}
 
 		raw, err := p.raw(func(t lexer.Token) (bool, bool) {
+			if lexer.NewMultiMatcher(lexer.NewMatcher("ExpVar"), lexer.NewMatcher("ExpStart"), lexer.NewMatcher("ExpEnd")).Is(t) {
+				return true, false
+			}
+
 			return o.rawMatcher.Is(t), false
-		})
+		}, o.rawDrop)
 		if err != nil {
 			return nil, err
 		}
@@ -212,7 +278,8 @@ func (p *Parser) exp() (_ Node, rerr error) {
 		}
 	}()
 
-	if lexer.NewMatcher("ExpStart").Is(p.peekn(0)) {
+	t := p.peekn(0)
+	if lexer.NewMatcher("ExpStart").Is(t) {
 		p.advance() // Eat $(
 		exp := &Exp{}
 
@@ -227,54 +294,96 @@ func (p *Parser) exp() (_ Node, rerr error) {
 				return exp, nil
 			}
 
-			// Trailing comma
 			if lexer.NewMatcher("Char", ",").Is(t) {
-				if lexer.NewMatcher("ExpEnd").Is(p.peekn(1)) {
-					p.advance() // Eat ,
-					p.advance() // Eat )
-					return exp, nil
+				p.advance() // Eat ,
+			}
+
+			// Patsubst
+			if len(exp.Parts) == 1 && lexer.NewMatcher("Char", ":").Is(t) {
+				p.advance() // :
+
+				pattern, err := p.expr(true, lexer.NewMatcher("Char", "="))
+				if err != nil {
+					return nil, err
 				}
+				if pattern == nil {
+					pattern = &Raw{}
+				}
+
+				subst, err := p.expr(true, lexer.NewMatcher("ExpEnd", ")"))
+				if err != nil {
+					return nil, err
+				}
+				if subst == nil {
+					subst = &Raw{}
+				}
+
+				return &PatSubst{
+					Name:    exp.Parts[0],
+					Pattern: pattern,
+					Subst:   subst,
+				}, nil
 			}
 
 			isFirst := len(exp.Parts) == 0
 			sepMatcher := func() lexer.Matcher {
 				if isFirst {
-					return lexer.NewMatcher("Char", " ")
+					return lexer.NewMultiMatcher(NlMatcher, lexer.NewMatcher("Char", " ", ":"))
 				}
 
 				return lexer.NewMatcher("Char", ",")
 			}()
-			expMatcher := lexer.NewMultiMatcher(lexer.NewMatcher("ExpStart"), lexer.NewMatcher("ExpEnd"))
 
 			part, err := p._expr(exprOptions{
 				matcher:    sepMatcher,
-				eat:        true,
-				rawMatcher: lexer.NewMultiMatcher(expMatcher, sepMatcher),
+				eat:        false,
+				rawMatcher: sepMatcher,
 			})
 			if err != nil {
 				return exp, err
 			}
 
-			if isFirst && part == nil {
-				return exp, p.ut(t)
+			p.eat(lexer.NewMultiMatcher(NlMatcher, lexer.NewMatcher("Char", " ")))
+
+			if part == nil {
+				if isFirst {
+					return exp, p.ut(t)
+				}
+
+				part = &Raw{}
 			}
 
 			exp.Parts = append(exp.Parts, part)
 		}
+	} else if lexer.NewMatcher("ExpVar").Is(t) {
+		p.advance() // Eat $...
+		return &Exp{
+			Parts: []Node{&Raw{Text: strings.TrimPrefix(t.Value, "$")}},
+		}, nil
 	}
 
 	return nil, nil
 }
 
-func (p *Parser) raw(until UntilFunc) (_ *Raw, rerr error) {
+type UntilFunc func(token lexer.Token) (bool, bool)
+type DropFunc func(token lexer.Token) bool
+
+func (p *Parser) raw(until UntilFunc, drop DropFunc) (_ *Raw, rerr error) {
 	defer func() {
 		if rerr != nil {
 			rerr = p.wrap("raw", rerr)
 		}
 	}()
+	if drop == nil {
+		drop = func(token lexer.Token) bool {
+			return false
+		}
+	}
 
 	acc := ""
 	for {
+		p.eat(lexer.NewMatcher("Comment"))
+
 		t := p.peekn(0)
 		if lexer.NewMatcher("EOF").Is(t) {
 			break
@@ -288,7 +397,9 @@ func (p *Parser) raw(until UntilFunc) (_ *Raw, rerr error) {
 		}
 
 		p.advance()
-		acc += t.Value
+		if !drop(t) {
+			acc += t.Value
+		}
 	}
 
 	if acc == "" {
@@ -304,15 +415,27 @@ func (p *Parser) varass(name Node, opt lexer.Token) (_ Node, rerr error) {
 		}
 	}()
 
-	expr, err := p.expr(true, lexer.NewMatcher("Nl"))
+	Trim(name, func(s string) string {
+		return strings.TrimSpace(s)
+	})
+
+	p.eat(lexer.NewMatcher("Char", " "))
+
+	expr, err := p.raw(func(t lexer.Token) (bool, bool) {
+		return NlMatcher.Is(t), true
+	}, nil)
 	if err != nil {
 		return nil, err
+	}
+
+	if expr == nil {
+		expr = &Raw{}
 	}
 
 	return &Var{
 		Name:  name,
 		Op:    opt.Value,
-		Value: expr,
+		Value: expr.Text,
 	}, nil
 }
 
@@ -323,6 +446,8 @@ func (p *Parser) ifeq(t lexer.Token) (_ Node, rerr error) {
 		}
 	}()
 
+	p.eatall(lexer.NewMatcher("Char", " "))
+
 	_, err := p.expect(lexer.NewMatcher("Char", "("))
 	if err != nil {
 		return nil, err
@@ -332,13 +457,19 @@ func (p *Parser) ifeq(t lexer.Token) (_ Node, rerr error) {
 	if err != nil {
 		return nil, err
 	}
+	if left == nil {
+		left = &Raw{}
+	}
 
 	right, err := p.expr(true, lexer.NewMatcher("Char", ")"))
 	if err != nil {
 		return nil, err
 	}
+	if right == nil {
+		right = &Raw{}
+	}
 
-	p.eatall(lexer.NewMatcher("Nl"))
+	p.eatall(NlMatcher)
 
 	body, err := p.ifbody()
 	if err != nil {
@@ -346,10 +477,10 @@ func (p *Parser) ifeq(t lexer.Token) (_ Node, rerr error) {
 	}
 
 	return &IfEq{
-		Not:   t.Value == "ifneq",
-		Left:  left,
-		Right: right,
-		Body:  body,
+		Expected: t.Value == "ifeq",
+		Left:     left,
+		Right:    right,
+		Body:     body,
 	}, nil
 }
 
@@ -360,12 +491,14 @@ func (p *Parser) ifdef(t lexer.Token) (_ Node, rerr error) {
 		}
 	}()
 
+	p.eatall(lexer.NewMatcher("Char", " "))
+
 	ident, err := p.expectIdent()
 	if err != nil {
 		return nil, err
 	}
 
-	p.eatall(lexer.NewMatcher("Nl"))
+	p.eatall(NlMatcher)
 
 	body, err := p.ifbody()
 	if err != nil {
@@ -373,9 +506,9 @@ func (p *Parser) ifdef(t lexer.Token) (_ Node, rerr error) {
 	}
 
 	return &IfDef{
-		Not:   t.Value == "ifndef",
-		Ident: ident,
-		Body:  body,
+		Expected: t.Value == "ifdef",
+		Ident:    ident,
+		Body:     body,
 	}, nil
 }
 
@@ -413,46 +546,30 @@ func (p *Parser) ifbody() (_ []Node, rerr error) {
 	}
 }
 
-func (p *Parser) targetdeps() (_ []Node, rerr error) {
-	defer func() {
-		if rerr != nil {
-			rerr = p.wrap("targetdeps", rerr)
-		}
-	}()
-
-	deps := make([]Node, 0)
-
+func (p *Parser) recipe() ([]Node, error) {
+	cmds := make([]Node, 0)
 	for {
-		p.eatall(lexer.NewMatcher("Char", " "))
-		t := p.peekn(0)
-		if isEOF(t) {
+		if !p.eat(lexer.NewMatcher("Tab")) {
 			break
 		}
 
-		if lexer.NewMatcher("TargetDepsEnd").Is(t) {
-			p.advance()
-			break
+		if p.eat(lexer.NewMatcher("Comment")) {
+			p.advance() // Eat \n
+			continue
 		}
 
-		expr, err := p.expr(false, lexer.NewMultiMatcher(
-			lexer.NewMatcher("Char", " "),
-			lexer.NewMatcher("TargetDepsEnd"),
-		))
+		cmd, err := p.expr(true, NlMatcher)
 		if err != nil {
-			return nil, err
+			return cmds, err
 		}
-		if expr == nil {
-			return nil, p.ut(t)
+		if cmd == nil {
+			return nil, p.ut(p.peekn(0))
 		}
 
-		deps = append(deps, expr)
+		cmds = append(cmds, cmd)
 	}
 
-	if len(deps) == 0 {
-		return nil, nil
-	}
-
-	return deps, nil
+	return cmds, nil
 }
 
 func (p *Parser) target(name Node) (_ Node, rerr error) {
@@ -462,42 +579,69 @@ func (p *Parser) target(name Node) (_ Node, rerr error) {
 		}
 	}()
 
-	target := &Target{
-		Name: name,
+	p.eatall(lexer.NewMatcher("Char", " "))
+
+	if name == nil {
+		name = &Raw{}
 	}
 
-	deps, err := p.targetdeps()
-	if err != nil {
-		return target, err
+	expr, err := p.expr(false, lexer.NewMultiMatcher(
+		NlMatcher,
+		lexer.NewMatcher("Colon"),
+	))
+	if rerr != nil {
+		return nil, err
 	}
-	target.Deps = deps
 
-	for {
-		t := p.peekn(0)
-		if !lexer.NewMatcher("Tab").Is(t) {
-			break
+	t := p.advance() // Eat \n or :
+
+	if lexer.NewMultiMatcher(NlMatcher, lexer.NewMatcher("EOF")).Is(t) {
+		cmds, err := p.recipe()
+		if rerr != nil {
+			return nil, err
 		}
 
-		p.advance() // Eat \t
-		cmd, err := p.expr(true, lexer.NewMatcher("Nl"))
-		if err != nil {
-			return target, err
-		}
-
-		target.Commands = append(target.Commands, cmd)
+		return &Target{
+			Name:   name,
+			Deps:   expr,
+			Recipe: cmds,
+		}, nil
 	}
 
-	return target, nil
+	prereq, err := p.expr(true, NlMatcher)
+	if rerr != nil {
+		return nil, err
+	}
+
+	cmds, err := p.recipe()
+	if rerr != nil {
+		return nil, err
+	}
+
+	return &StaticPatternTarget{
+		Names:   name,
+		Targets: expr,
+		Prereqs: prereq,
+		Recipe:  cmds,
+	}, nil
 }
 
 func (p *Parser) expectIdent() (string, error) {
 	ident, err := p.raw(func(t lexer.Token) (bool, bool) {
+		if lexer.NewMatcher("Char").Is(t) {
+			switch t.Value {
+			case " ", "\n":
+				return true, false
+			}
+
+			return false, false
+		}
+
 		return !lexer.NewMultiMatcher(
-			lexer.NewMatcher("Char"),
 			lexer.NewMatcher("Keyword"),
 			lexer.NewMatcher("Escaped"),
 		).Is(t), false
-	})
+	}, nil)
 	if err != nil {
 		return "", err
 	}
@@ -521,35 +665,37 @@ func (p *Parser) define() (_ Node, rerr error) {
 		return nil, err
 	}
 
-	body := make([]Node, 0)
-	for {
-		p.eatall(lexer.NewMatcher("Nl"))
+	p.eatall(lexer.NewMatcher("Char", " "))
+	p.eat(NlMatcher)
 
-		t := p.peekn(0)
-		if isEOF(t) {
-			return nil, p.err("unexpected eof")
-		}
-
-		if lexer.NewMatcher("Keyword", "endef").Is(t) {
-			p.advance() // Eat endef
-			break
-		}
-
-		p.eat(lexer.NewMatcher("Tab"))
-
-		expr, err := p.expr(true, lexer.NewMatcher("Nl"))
-		if err != nil {
-			return nil, err
-		}
-		if expr == nil {
-			return nil, p.ut(t)
-		}
-
-		body = append(body, expr)
+	body, err := p.raw(func(t lexer.Token) (bool, bool) {
+		return lexer.NewMatcher("Keyword", "endef").Is(t), true
+	}, nil)
+	if err != nil {
+		return nil, err
 	}
+
+	Trim(body, func(s string) string {
+		return strings.TrimSuffix(s, "\n")
+	})
 
 	return &Define{
 		Name: ident,
-		Body: body,
+		Body: body.Text,
 	}, nil
+}
+
+func Trim(n Node, f func(s string) string) {
+	if n == nil {
+		return
+	}
+
+	last := n
+	if expr, ok := last.(*Expr); ok {
+		last = expr.Parts[len(expr.Parts)-1]
+	}
+
+	if raw, ok := last.(*Raw); ok {
+		raw.Text = f(raw.Text)
+	}
 }
