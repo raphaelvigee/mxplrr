@@ -1,4 +1,4 @@
-name: release
+name: Release
 
 on:
   push:
@@ -32,22 +32,24 @@ jobs:
         goarch: [ 386, amd64 ]
     needs: release
     env:
-      BIN_EXT: "" ## will be overridden if necessary
+      GOOS: ${{ matrix.goos }}
+      GOARCH: ${{ matrix.goarch }}
     steps:
       - name: Checkout the repository
         uses: actions/checkout@v2
-      - name: Prepare dist
-        run: mkdir -p ./dist
 
       - name: Setup extension
-        if: ${{ matrix.goos }} == "windows"
-        run: echo "BIN_EXT=.exe" >> $GITHUB_ENV
+        id: ext
+        run: |
+          if [$GOOS == 'windows']
+          then
+              echo "::set-output name=ext::.exe"
+          else
+              echo "::set-output name=ext::"
+          fi
 
       - name: Build
-        env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-        run: go build -o /out-bin mxplrr/cli/mxplrr
+        run: go build -o ./out-bin mxplrr/cli/mxplrr
 
       - name: Upload Asset
         id: upload-release-asset
@@ -56,6 +58,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ needs.release.outputs.release_upload_url }}
-          asset_path: /out-bin
-          asset_name: ${{ matrix.goos }}-mxplrr${{ env.BIN_EXT }}
+          asset_path: ./out-bin
+          asset_name: ${{ matrix.goos }}-mxplrr${{ steps.ext.outputs.ext }}
           asset_content_type: application/octet-stream

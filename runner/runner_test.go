@@ -219,17 +219,24 @@ func TestRunner_Strip(t *testing.T) {
 }
 
 func TestRunner_Wildcard(t *testing.T) {
-	f, err := os.Create("/tmp/mxplrr_test_wildcard.ext")
+	d, err := ioutil.TempDir("", "mxplrr-test")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(f.Name())
+	defer os.RemoveAll(d)
+
+	for _, f := range []string{"some", "file", "mxplrr_test_wildcard.ext"} {
+		_, err := os.Create(d + "/" + f)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	testCases := []struct {
 		expr string
 	}{
-		{"$(wildcard /tmp/*)"},
-		{"$(wildcard /tmp/*.ext)"},
+		{"$(wildcard " + d + "/*)"},
+		{"$(wildcard " + d + "/*.ext)"},
 	}
 	for _, tc := range testCases {
 		out := runAsFile(t, tc.expr)
@@ -305,7 +312,7 @@ func TestRunner_Call(t *testing.T) {
 	}{
 		{"$(bar)"},
 	}
-	pre:=`
+	pre := `
 comma:= ,
 empty:=
 space:= $(empty) $(empty)
