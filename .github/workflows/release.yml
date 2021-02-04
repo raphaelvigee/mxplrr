@@ -61,5 +61,5 @@ jobs:
         with:
           upload_url: ${{ needs.release.outputs.release_upload_url }}
           asset_path: ./out-bin
-          asset_name: ${{ matrix.goos }}-mxplrr${{ steps.meta.outputs.ext }}
+          asset_name: mxplrr-${{ matrix.goos }}.${{ matrix.goarch }}${{ steps.meta.outputs.ext }}
           asset_content_type: ${{ steps.meta.outputs.content_type }}
