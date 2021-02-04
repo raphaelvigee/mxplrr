@@ -10,10 +10,10 @@ import (
 var _def *stateful.Definition
 
 func init() {
-	ExpStart := stateful.Rule{`ExpStart`, `\$\(`, stateful.Push("Exp")}
-	ExpVar := stateful.Rule{`ExpVar`, `\$[\d]+|\$[\w-]+`, nil}
+	ExpStart := stateful.Rule{`ExpStart`, `\$[({]`, stateful.Push("Exp")}
+	ExpVar := stateful.Rule{`ExpVar`, `\$[\d]+|\$[\w]`, nil}
 	Char := stateful.Rule{`Char`, `.|\n`, nil}
-	AssignOp := stateful.Rule{`AssignOp`, `::=|:=|\?=|!=|\+=|=`, stateful.Push("Expr")}
+	AssignOp := stateful.Rule{`AssignOp`, `::=|:=|\?=|!=|\+=|=`, nil}
 	KeywordPattern := strings.Join([]string{
 		"endif",
 		"ifeq",
@@ -28,7 +28,7 @@ func init() {
 	_def = stateful.Must(stateful.Rules{
 		"Base": {
 			{"line_continuation", `\\\n\s*`, nil},
-			{`Comment`, `#[^\n]*\n`, nil},
+			{`Comment`, `#[^\n]*`, nil},
 			{`Escaped`, `\\.|[$]{2}`, nil},
 		},
 		"Common": {
@@ -36,22 +36,8 @@ func init() {
 		},
 		"Exp": {
 			stateful.Include("Base"),
-			{`ExpEnd`, `\)`, stateful.Pop()},
+			{`ExpEnd`, `[)}]`, stateful.Pop()},
 			{`ExpStr`, `'[^']*'|"[^"]*"`, nil},
-			ExpVar,
-			ExpStart,
-			Char,
-		},
-		"Expr": {
-			stateful.Include("Base"),
-			{`Nl`, `\n`, stateful.Pop()},
-			ExpVar,
-			ExpStart,
-			Char,
-		},
-		"Define": {
-			stateful.Include("Base"),
-			{`Endef`, `endef`, stateful.Pop()},
 			ExpVar,
 			ExpStart,
 			Char,
@@ -59,17 +45,16 @@ func init() {
 		"Keyword": {
 			stateful.Include("Common"),
 			{`Nl`, `\n`, stateful.Push("Root")},
-			stateful.Include("Expr"),
+			stateful.Include("Root"),
 		},
 		"Root": {
 			stateful.Include("Common"),
 			AssignOp,
 			{`Colon`, `:`, nil},
 			{`Nl`, `\n`, nil},
-			{`Tab`, `\t`, stateful.Push("Expr")},
+			{`Tab`, `\t`, nil},
 			ExpVar,
 			ExpStart,
-			{`Define`, "define", stateful.Push("Define")},
 			{`Keyword`, KeywordPattern, stateful.Push("Keyword")},
 			Char,
 		},

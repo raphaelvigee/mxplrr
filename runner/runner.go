@@ -10,42 +10,92 @@ import (
 	"strings"
 )
 
+type Var interface {
+	Get(r *Runner) (string, error)
+	Value(r *Runner) (string, error)
+}
+
+type RawVar string
+
+func (v RawVar) Get(*Runner) (string, error) {
+	return string(v), nil
+}
+
+func (v RawVar) Value(r *Runner) (string, error) {
+	return v.Get(r)
+}
+
+type ExpandVar string
+
+func (v ExpandVar) Get(r *Runner) (string, error) {
+	return RunExprFromString(r, string(v))
+}
+
+func (v ExpandVar) Value(*Runner) (string, error) {
+	return string(v), nil
+}
+
+type FuncVar func(r *Runner) (string, error)
+
+func (f FuncVar) Get(r *Runner) (string, error) {
+	return f(r)
+}
+
+func (f FuncVar) Value(r *Runner) (string, error) {
+	return f.Get(r)
+}
+
+func RunExprFromString(r *Runner, s string) (string, error) {
+	p, err := parser.NewParserString(s)
+	if err != nil {
+		return "", err
+	}
+
+	n, err := p.ParseExpr()
+	if err != nil {
+		return "", err
+	}
+
+	if n == nil {
+		return "", nil
+	}
+
+	return r.Run(n)
+}
+
 // Used for special variables
 type Func struct {
 	parser.Base
 	Func func() (string, error)
 }
 
-func getEnv(data []string) map[string]parser.Node {
-	items := make(map[string]parser.Node)
+func getEnv(data []string) map[string]Var {
+	items := make(map[string]Var)
 	for _, item := range data {
 		splits := strings.Split(item, "=")
 		key := splits[0]
 		val := splits[1]
 
-		items[key] = &parser.Raw{Text: val}
+		items[key] = RawVar(val)
 	}
 	return items
 }
 
 func New() *Runner {
 	env := getEnv(os.Environ())
+	env["MAKEFILE_LIST"] = FuncVar(func(r *Runner) (string, error) {
+		return strings.Join(r.files, " "), nil
+	})
 
-	r := &Runner{
+	return &Runner{
 		Env:     env,
 		Targets: map[string]*parser.Target{},
 	}
-
-	r.Env["MAKEFILE_LIST"] = &Func{Func: func() (string, error) {
-		return strings.Join(r.files, " "), nil
-	}}
-
-	return r
 }
 
 type Runner struct {
 	RootDir string
-	Env     map[string]parser.Node
+	Env     map[string]Var
 	Targets map[string]*parser.Target
 
 	files                []string
@@ -102,7 +152,7 @@ func (r *Runner) Run(node parser.Node) (_ret string, _err error) {
 			return "", err
 		}
 
-		log.Tracef("Left: %v Right: %v", left, right)
+		log.Tracef("Left: `%v` Right: `%v`", left, right)
 
 		if (left == right) == n.Expected {
 			_, err = r.RunNodes(n.Body)
@@ -162,10 +212,6 @@ func (r *Runner) Run(node parser.Node) (_ret string, _err error) {
 
 		log.Tracef("Defining target %v", name)
 
-		if _, ok := r.Targets[name]; ok {
-			return "", fmt.Errorf("target %v is already defined", name)
-		}
-
 		r.Targets[name] = n
 
 		return "", nil
@@ -177,21 +223,22 @@ func (r *Runner) Run(node parser.Node) (_ret string, _err error) {
 
 		switch n.Op {
 		case ":=", "::=":
-			value, err := r.Run(n.Value)
+			log.Tracef("Defining simple var %v", name)
+
+			v, err := RunExprFromString(r, n.Value)
 			if err != nil {
 				return "", err
 			}
 
-			log.Tracef("Defining simple var %v", name)
+			r.Env[name] = RawVar(v)
 
-			r.Env[name] = &parser.Raw{Text: value}
 			return "", nil
 		case "+=":
 			v := r.Env[name]
 
 			var currentValue string
 			if v != nil {
-				currentValue, err = r.Run(v)
+				currentValue, err = v.Get(r)
 				if err != nil {
 					return "", err
 				}
@@ -200,17 +247,31 @@ func (r *Runner) Run(node parser.Node) (_ret string, _err error) {
 				}
 			}
 
-			toAppend, err := r.Run(n.Value)
+			toAppend, err := RunExprFromString(r, n.Value)
 			if err != nil {
 				return "", err
 			}
 
-			r.Env[name] = &parser.Raw{Text: currentValue + toAppend}
+			r.Env[name] = RawVar(currentValue + toAppend)
+			return "", nil
+		case "?=":
+			if _, ok := r.Env[name]; ok {
+				log.Tracef("Defining var %v", name)
+
+				value, err := RunExprFromString(r, n.Value)
+				if err != nil {
+					return "", err
+				}
+
+				r.Env[name] = RawVar(value)
+			}
+
 			return "", nil
 		case "=":
 			log.Tracef("Defining var %v", name)
 
-			r.Env[name] = n.Value
+			r.Env[name] = ExpandVar(n.Value)
+
 			return "", nil
 		default:
 			return "", fmt.Errorf("unhandled op %s", n.Op)
@@ -218,7 +279,7 @@ func (r *Runner) Run(node parser.Node) (_ret string, _err error) {
 	case *parser.Define:
 		log.Tracef("Define: %v", n.Name)
 
-		r.Env[n.Name] = n.Body
+		r.Env[n.Name] = ExpandVar(n.Body)
 
 		return "", nil
 	case *parser.PatSubst:
@@ -237,13 +298,13 @@ func (r *Runner) Run(node parser.Node) (_ret string, _err error) {
 	return "", fmt.Errorf("unhandled type %T", node)
 }
 
-func (r *Runner) RunWithVars(args map[string]parser.Node, f func() (string, error)) (string, error) {
+func (r *Runner) RunWithVars(args map[string]Var, f func() (string, error)) (string, error) {
 	if len(args) == 0 {
 		return f()
 	}
 
 	previous := r.Env
-	newEnv := make(map[string]parser.Node)
+	newEnv := make(map[string]Var)
 	for k, v := range r.Env {
 		newEnv[k] = v
 	}
@@ -265,26 +326,21 @@ func (r *Runner) RunWithVars(args map[string]parser.Node, f func() (string, erro
 	return s, err
 }
 
-func (r *Runner) RunVar(node parser.Node, args []string) (_ret string, _ error) {
+func (r *Runner) RunVar(v Var, args []string) (_ret string, _ error) {
 	r.indent += "| "
-	log.Tracef("%v> Running var %-14T - %v", r.indent, node, args)
+	log.Tracef("%v> Running var %-14T - %v", r.indent, v, args)
 	defer func() {
-		log.Tracef("%v< %-14T -> %v", r.indent, node, _ret)
+		log.Tracef("%v< %-14T -> %v", r.indent, v, _ret)
 		r.indent = r.indent[2:]
 	}()
 
-	envArgs := make(map[string]parser.Node)
+	envArgs := make(map[string]Var)
 	for i, v := range args {
-		envArgs[strconv.Itoa(i)] = &parser.Raw{Text: v}
+		envArgs[strconv.Itoa(i)] = RawVar(v)
 	}
 
 	return r.RunWithVars(envArgs, func() (string, error) {
-		switch n := node.(type) {
-		case *Func:
-			return n.Func()
-		}
-
-		return r.Run(node)
+		return v.Get(r)
 	})
 }
 
@@ -310,7 +366,7 @@ func (r *Runner) runExp(exp *parser.Exp) (string, error) {
 			return "", nil
 		}
 
-		value, err := r.RunVar(name, nil)
+		value, err := name.Get(r)
 		if err != nil {
 			return "", err
 		}
@@ -348,7 +404,14 @@ func (r *Runner) RunNodesStr(nodes []parser.Node, sep string) (string, error) {
 		return "", err
 	}
 
-	return strings.Join(outs, sep), nil
+	neouts := make([]string, 0)
+	for _, out := range outs {
+		if out != "" {
+			neouts = append(neouts, out)
+		}
+	}
+
+	return strings.Join(neouts, sep), nil
 }
 
 func (r *Runner) curdir() string {
@@ -378,6 +441,8 @@ func (r *Runner) include(filename string) (*parser.File, error) {
 }
 
 func Words(s string) []string {
+	s = strings.TrimSpace(s)
+
 	if s == "" {
 		return nil
 	}

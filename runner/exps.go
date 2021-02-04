@@ -38,7 +38,43 @@ func init() {
 		"warning":    control,
 		"info":       control,
 		"patsubst":   patsubst,
+		"addprefix":  addprefix,
+		"value":      value,
 	}
+}
+
+func value(r *Runner, root string, args []parser.Node) (string, error) {
+	name, err := r.Run(args[0])
+	if err != nil {
+		return "", err
+	}
+
+	v := r.Env[name]
+	if v == nil {
+		return "", nil
+	}
+
+	return v.Value(r)
+}
+
+func addprefix(r *Runner, root string, args []parser.Node) (string, error) {
+	prefix, err := r.Run(args[0])
+	if err != nil {
+		return "", err
+	}
+
+	namess, err := r.Run(args[1])
+	if err != nil {
+		return "", err
+	}
+
+	names := Words(namess)
+
+	for i, n := range names {
+		names[i] = prefix + n
+	}
+
+	return strings.Join(names, " "), nil
 }
 
 func basename(r *Runner, root string, args []parser.Node) (string, error) {
@@ -71,7 +107,9 @@ func shell(r *Runner, root string, args []parser.Node) (string, error) {
 	if err != nil {
 		return "", err
 	}
+
 	cmd := exec.Command("sh", "-c", strings.Join(shcmd, ","))
+	cmd.Dir = r.RootDir
 	data, err := cmd.CombinedOutput()
 	out := string(data)
 	if err != nil {
@@ -93,7 +131,7 @@ func call(r *Runner, root string, args []parser.Node) (string, error) {
 
 	v := r.Env[varName]
 	if v == nil {
-		return "", fmt.Errorf("no var found for %v", varName)
+		return "", nil
 	}
 
 	return r.RunVar(v, parts)
@@ -178,17 +216,23 @@ func control(r *Runner, root string, args []parser.Node) (string, error) {
 }
 
 func eval(r *Runner, root string, args []parser.Node) (string, error) {
-	toEval, err := r.RunVar(args[0], nil)
+	value, err := r.Run(args[0])
 	if err != nil {
 		return "", err
 	}
 
-	n, err := parser.Parse(strings.NewReader(toEval))
+	p, err := parser.NewParserString(value)
+	if err != nil {
+		return "", err
+	}
+
+	n, err := p.Parse()
 	if err != nil {
 		return "", err
 	}
 
 	_, err = r.Run(n)
+
 	return "", err
 }
 
@@ -318,8 +362,8 @@ func foreach(r *Runner, root string, args []parser.Node) (string, error) {
 
 	out := make([]string, 0)
 	for _, w := range Words(list) {
-		res, err := r.RunWithVars(map[string]parser.Node{
-			targetVar: &parser.Raw{Text: w},
+		res, err := r.RunWithVars(map[string]Var{
+			targetVar: ExpandVar(w),
 		}, func() (string, error) {
 			return r.Run(args[2])
 		})

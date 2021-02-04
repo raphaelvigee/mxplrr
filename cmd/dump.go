@@ -64,7 +64,9 @@ func parse(path string, print bool) error {
 		fmt.Println()
 	}
 
-	node, err := parser.ParseTokens(tokens)
+	p := parser.NewParserTokens(tokens)
+
+	node, err := p.Parse()
 	if print {
 		repr.Println(node)
 		fmt.Println()

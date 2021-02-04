@@ -36,7 +36,12 @@ run:
 func run(t *testing.T, r *Runner, ss ...string) string {
 	var out string
 	for _, s := range ss {
-		n, err := parser.Parse(strings.NewReader(s))
+		p, err := parser.NewParserString(s)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		n, err := p.Parse()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -52,8 +57,8 @@ func run(t *testing.T, r *Runner, ss ...string) string {
 
 func TestRunner_RunExpGetVariable(t *testing.T) {
 	r := &Runner{
-		Env: map[string]parser.Node{
-			"TEST": &parser.Raw{Text: "value"},
+		Env: map[string]Var{
+			"TEST": RawVar("value"),
 		},
 	}
 	out := run(t, r, `$(TEST)`)
@@ -62,12 +67,12 @@ func TestRunner_RunExpGetVariable(t *testing.T) {
 
 func TestRunner_RunExpSetVariable(t *testing.T) {
 	r := &Runner{
-		Env: map[string]parser.Node{
-			"TEST": &parser.Raw{Text: "value"},
+		Env: map[string]Var{
+			"TEST": RawVar("value"),
 		},
 	}
 	run(t, r, `TEST2:=$(TEST)`)
-	assert.Equal(t, &parser.Raw{Text: "value"}, r.Env["TEST2"])
+	assert.Equal(t, RawVar("value"), r.Env["TEST2"])
 }
 
 func TestRunner_RunShell(t *testing.T) {
@@ -78,7 +83,7 @@ func TestRunner_RunShell(t *testing.T) {
 
 func TestRunner_ComplexDefine(t *testing.T) {
 	r := &Runner{
-		Env: map[string]parser.Node{},
+		Env: map[string]Var{},
 	}
 	run(t, r, `
 MODULES =
@@ -93,14 +98,14 @@ endef
 $(call somedefine,somemodule)
 
 `)
-	assert.Equal(t, &parser.Raw{Text: "somepath"}, r.Env["somemodule-path"])
+	assert.Equal(t, RawVar("somepath"), r.Env["somemodule-path"])
 }
 
 func TestRunner_RunExpr(t *testing.T) {
 	r := &Runner{
-		Env: map[string]parser.Node{
-			"TEST":       &parser.Raw{Text: "value"},
-			"test-value": &parser.Raw{Text: "42"},
+		Env: map[string]Var{
+			"TEST":       RawVar("value"),
+			"test-value": RawVar("42"),
 		},
 	}
 	out := run(t, r, `$(test-$(TEST))`)
@@ -112,7 +117,7 @@ const rootDir = "/some/dir"
 func runAsFile(t *testing.T, s ...string) string {
 	r := &Runner{
 		RootDir: rootDir,
-		Env:     map[string]parser.Node{},
+		Env:     map[string]Var{},
 		files:   []string{rootDir + "/subdir/Makefile"},
 	}
 
@@ -272,6 +277,40 @@ func TestRunner_Patsubst(t *testing.T) {
 		{"$(foo:%.o=%.c)"},
 	}
 	pre := `foo := a.o b.o l.a c.o`
+	for _, tc := range testCases {
+		out := runAsFile(t, pre, tc.expr)
+		assert.NotEmpty(t, out)
+		expected := makeRun(t, pre, tc.expr)
+		assert.Equal(t, expected, out)
+	}
+}
+
+func TestRunner_Addprefix(t *testing.T) {
+	testCases := []struct {
+		expr string
+	}{
+		{"$(addprefix src/,foo bar)"},
+	}
+	for _, tc := range testCases {
+		out := runAsFile(t, "", tc.expr)
+		assert.NotEmpty(t, out)
+		expected := makeRun(t, "", tc.expr)
+		assert.Equal(t, expected, out)
+	}
+}
+
+func TestRunner_Call(t *testing.T) {
+	testCases := []struct {
+		expr string
+	}{
+		{"$(bar)"},
+	}
+	pre:=`
+comma:= ,
+empty:=
+space:= $(empty) $(empty)
+foo:= a b c
+bar:= $(subst $(space),$(comma),$(foo))`[1:]
 	for _, tc := range testCases {
 		out := runAsFile(t, pre, tc.expr)
 		assert.NotEmpty(t, out)

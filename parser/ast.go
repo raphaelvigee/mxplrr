@@ -18,7 +18,7 @@ func (b Base) Comments() []string {
 type File struct {
 	Base
 	Path  string
-	Nodes Nodes
+	Nodes Node
 }
 
 type Target struct {
@@ -55,7 +55,7 @@ type Var struct {
 	Base
 	Name  Node
 	Op    string
-	Value Node
+	Value string
 }
 
 type PatSubst struct {
@@ -93,7 +93,7 @@ type Comment struct {
 type Define struct {
 	Base
 	Name string
-	Body Node
+	Body string
 }
 
 type Modifier struct {
