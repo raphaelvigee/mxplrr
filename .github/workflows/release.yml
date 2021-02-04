@@ -39,13 +39,15 @@ jobs:
         uses: actions/checkout@v2
 
       - name: Setup extension
-        id: ext
+        id: meta
         run: |
           if [$GOOS == 'windows']
           then
               echo "::set-output name=ext::.exe"
+              echo "::set-output name=content_type::application/x-ms-dos-executable"
           else
               echo "::set-output name=ext::"
+              echo "::set-output name=content_type::application/octet-stream"
           fi
 
       - name: Build
@@ -59,5 +61,5 @@ jobs:
         with:
           upload_url: ${{ needs.release.outputs.release_upload_url }}
           asset_path: ./out-bin
-          asset_name: ${{ matrix.goos }}-mxplrr${{ steps.ext.outputs.ext }}
-          asset_content_type: application/octet-stream
+          asset_name: ${{ matrix.goos }}-mxplrr${{ steps.meta.outputs.ext }}
+          asset_content_type: ${{ steps.meta.outputs.content_type }}
