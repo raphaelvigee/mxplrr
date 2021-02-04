@@ -14,8 +14,9 @@ func init() {
 }
 
 var explorerCmd = &cobra.Command{
-	Use:   "explore",
+	Use:   "explore <makefile> <target>",
 	Short: "Explore target",
+	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		filePath, err := filepath.Abs(args[0])
 		if err != nil {

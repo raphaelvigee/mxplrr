@@ -16,8 +16,9 @@ func init() {
 }
 
 var dumpCmd = &cobra.Command{
-	Use:   "dump",
+	Use:   "dump <makefile>",
 	Short: "Dump",
+	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		p := args[0]
 		if strings.HasSuffix(p, "/...") {
